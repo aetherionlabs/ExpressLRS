@@ -30,7 +30,7 @@
 #include "devButton.h"
 #include "devLED.h"
 #include "devRXLUA.h"
-#include "devServoOutput.h"
+// devServoOutput removed - no RC output for serial bridge mode
 #include "devWIFI.h"
 #include "RXEndpoint.h"
 #include "RXOTAConnector.h"
@@ -83,7 +83,7 @@ device_affinity_t ui_devices[] = {
   {&WIFI_device, 0},
   {&Button_device, 0},
   {&AnalogVbat_device, 0},
-  {&ServoOut_device, 1},
+  // ServoOut_device removed - no RC output for serial bridge mode
   {&Baro_device, 0}, // must come after AnalogVbat_device to slow updates
 #if defined(PLATFORM_ESP32) && !defined(PLATFORM_ESP32_C3)
   {&VTxSPI_device, 0},
@@ -750,28 +750,9 @@ void ICACHE_RAM_ATTR HWtimerCallbackTock()
 {
     PFDloop.intEvent(micros()); // our internal osc just fired
 
-    if (ExpressLRS_currAirRate_Modparams->numOfSends > 1 && !(OtaNonce % ExpressLRS_currAirRate_Modparams->numOfSends))
-    {
-        if (LQCalcDVDA.currentIsSet())
-        {
-            crsfRCFrameAvailable();
-            if (teamraceHasModelMatch)
-                servoNewChannelsAvailable();
-        }
-        else
-        {
-            crsfRCFrameMissed();
-        }
-    }
-    else if (ExpressLRS_currAirRate_Modparams->numOfSends == 1)
-    {
-        if (!LQCalc.currentIsSet())
-        {
-            crsfRCFrameMissed();
-        }
-    }
+    // Serial bridge mode - RC frame notifications removed
 
-    // For any serial drivers that need to send on a regular cadence (i.e. CRSF to betaflight)
+    // For any serial drivers that need to send on a regular cadence
     sendImmediateRC();
 
     OtaNonce++;
