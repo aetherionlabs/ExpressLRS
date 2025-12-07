@@ -884,8 +884,7 @@ static void UpdateConnectDisconnectStatus()
       setConnectionState(connected);
       DBGLN("got downlink conn");
 
-      apInputBuffer.flush();
-      apOutputBuffer.flush();
+      // Airport buffers removed - only flush UART buffer
       uartInputBuffer.flush();
     }
   }
