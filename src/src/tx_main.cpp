@@ -46,9 +46,7 @@ ELRS_EEPROM eeprom;
 TxConfig config;
 Stream *TxUSB;
 
-// Variables / constants for Airport //
-FIFO<AP_MAX_BUF_LEN> apInputBuffer;
-FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
+// Airport mode removed - serial bridge only
 
 #define UART_INPUT_BUF_LEN 1024
 FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
@@ -281,20 +279,14 @@ static bool ICACHE_RAM_ATTR ProcessDownlinkPacket(SX12xxDriverCommon::rx_status 
         break;
 
       case PACKET_TYPE_DATA:
-        if (firmwareOptions.is_airport)
-        {
-          OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-        }
-        else
-        {
-          ProcessOtaDataDl(
-            ota8->data_dl.packageIndex, ota8Second->data_dl.packageIndex,
-            ota8->data_dl.payload,
-            ota8Second->data_dl.payload,
-            sizeof(ota8->data_dl.payload),
-            ota8->data_dl.stubbornAck
-          );
-        }
+        // Serial bridge mode - no airport mode
+        ProcessOtaDataDl(
+          ota8->data_dl.packageIndex, ota8Second->data_dl.packageIndex,
+          ota8->data_dl.payload,
+          ota8Second->data_dl.payload,
+          sizeof(ota8->data_dl.payload),
+          ota8->data_dl.stubbornAck
+        );
         break;
     }
   }
@@ -316,20 +308,14 @@ static bool ICACHE_RAM_ATTR ProcessDownlinkPacket(SX12xxDriverCommon::rx_status 
         break;
 
       case PACKET_TYPE_DATA:
-        if (firmwareOptions.is_airport)
-        {
-          OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-        }
-        else
-        {
-          ProcessOtaDataDl(
-            otaPktPtr->std.data_dl.packageIndex, otaPktPtrSecond->std.data_dl.packageIndex,
-            otaPktPtr->std.data_dl.payload,
-            otaPktPtrSecond->std.data_dl.payload,
-            sizeof(otaPktPtr->std.data_dl.payload),
-            otaPktPtr->std.data_dl.stubbornAck
-          );
-        }
+        // Serial bridge mode - no airport mode
+        ProcessOtaDataDl(
+          otaPktPtr->std.data_dl.packageIndex, otaPktPtrSecond->std.data_dl.packageIndex,
+          otaPktPtr->std.data_dl.payload,
+          otaPktPtrSecond->std.data_dl.payload,
+          sizeof(otaPktPtr->std.data_dl.payload),
+          otaPktPtr->std.data_dl.stubbornAck
+        );
         break;
     }
   }
@@ -563,45 +549,23 @@ void ICACHE_RAM_ATTR SendRCdataToRF()
   }
   else
   {
-    if (firmwareOptions.is_airport)
+    // Serial bridge mode - always send DATA packets (no RC channels, no airport mode)
+    otaPkt.std.type = PACKET_TYPE_DATA;
+    if (OtaIsFullRes)
     {
-      OtaPackAirportData(&otaPkt, &apInputBuffer);
-    }
-    else if ((NextPacketIsDataUl && DataUlSender.IsActive()) || dontSendChannelData)
-    {
-      otaPkt.std.type = PACKET_TYPE_DATA;
-      if (OtaIsFullRes)
-      {
-        otaPkt.full.data_ul.packageIndex = DataUlSender.GetCurrentPayload(
-          otaPkt.full.data_ul.payload,
-          sizeof(otaPkt.full.data_ul.payload));
-        if (config.GetLinkMode() == TX_MAVLINK_MODE)
-          otaPkt.full.data_ul.stubbornAck = DataDlReceiver.GetCurrentConfirm();
-      }
-      else
-      {
-        otaPkt.std.data_ul.packageIndex = DataUlSender.GetCurrentPayload(
-          otaPkt.std.data_ul.payload,
-          sizeof(otaPkt.std.data_ul.payload));
-        if (config.GetLinkMode() == TX_MAVLINK_MODE)
-          otaPkt.std.data_ul.stubbornAck = DataDlReceiver.GetCurrentConfirm();
-      }
-
-      // send channel data next so the channel messages also get sent during data uplink transmissions
-      NextPacketIsDataUl = false;
-      // counter can be increased even for normal DataUl messages since it's reset if a real bind message should be sent
-      BindingSendCount++;
-      // If not in TlmBurst, request a sync packet soon to trigger higher download bandwidth for reply
-      if (syncTelemBoostState == stbIdle)
-        syncSpamCounter = 1;
-      syncTelemBoostState = stbRequested;
+      otaPkt.full.data_ul.packageIndex = DataUlSender.GetCurrentPayload(
+        otaPkt.full.data_ul.payload,
+        sizeof(otaPkt.full.data_ul.payload));
+      if (config.GetLinkMode() == TX_MAVLINK_MODE)
+        otaPkt.full.data_ul.stubbornAck = DataDlReceiver.GetCurrentConfirm();
     }
     else
     {
-      // always enable DataUl after a channel package since the slot is only used if DataUlSender has data to send
-      NextPacketIsDataUl = true;
-
-      OtaPackChannelData(&otaPkt, ChannelData, DataDlReceiver.GetCurrentConfirm());
+      otaPkt.std.data_ul.packageIndex = DataUlSender.GetCurrentPayload(
+        otaPkt.std.data_ul.payload,
+        sizeof(otaPkt.std.data_ul.payload));
+      if (config.GetLinkMode() == TX_MAVLINK_MODE)
+        otaPkt.std.data_ul.stubbornAck = DataDlReceiver.GetCurrentConfirm();
     }
   }
 
@@ -920,8 +884,7 @@ static void UpdateConnectDisconnectStatus()
       setConnectionState(connected);
       DBGLN("got downlink conn");
 
-      apInputBuffer.flush();
-      apOutputBuffer.flush();
+      // Airport buffers removed - only flush UART buffer
       uartInputBuffer.flush();
     }
   }
@@ -1120,35 +1083,12 @@ void ParseMSPData(uint8_t *buf, uint8_t size)
 
 static void HandleUARTout()
 {
-  if (firmwareOptions.is_airport)
-  {
-    auto size = apOutputBuffer.size();
-    if (size)
-    {
-      uint8_t buf[size];
-      apOutputBuffer.lock();
-      apOutputBuffer.popBytes(buf, size);
-      apOutputBuffer.unlock();
-      TxUSB->write(buf, size);
-    }
-  }
+  // Airport mode removed - no output buffer handling needed
 }
 
 static void HandleUARTin()
 {
-  if (firmwareOptions.is_airport)
-  {
-    auto size = std::min(apInputBuffer.free(), (uint16_t)TxUSB->available());
-    if (size > 0)
-    {
-      uint8_t buf[size];
-      TxUSB->readBytes(buf, size);
-      apInputBuffer.lock();
-      apInputBuffer.pushBytes(buf, size);
-      apInputBuffer.unlock();
-    }
-    return;
-  }
+  // Airport mode removed - use standard CRSF/MAVLink parsing
 
   // USB serial input
   // If a mavlink packet is received on the USB input, automatically switch the link mode to and process as mavlink
