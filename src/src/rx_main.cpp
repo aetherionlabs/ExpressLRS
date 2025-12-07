@@ -17,10 +17,7 @@
 
 #include "rx-serial/SerialIO.h"
 #include "rx-serial/SerialNOOP.h"
-#include "rx-serial/SerialCRSF.h"
-#include "rx-serial/SerialSBUS.h"
-#include "rx-serial/SerialSUMD.h"
-#include "rx-serial/SerialAirPort.h"
+// Airport mode removed - serial bridge only
 #include "rx-serial/SerialHoTT_TLM.h"
 #include "rx-serial/SerialMavlink.h"
 #include "rx-serial/SerialTramp.h"
@@ -469,15 +466,8 @@ bool ICACHE_RAM_ATTR HandleSendDataDl()
     alreadyTLMresp = true;
     bool sendGeminiBuffer = false;
 
-    bool tlmQueued = false;
-    if (firmwareOptions.is_airport)
-    {
-        tlmQueued = apInputBuffer.size() > 0;
-    }
-    else
-    {
-        tlmQueued = DataDlSender.IsActive();
-    }
+    // Serial bridge mode - only check data sender (no airport mode)
+    bool tlmQueued = DataDlSender.IsActive();
 
     if (NextTelemetryType == PACKET_TYPE_LINKSTATS || !tlmQueued)
     {
@@ -510,11 +500,8 @@ bool ICACHE_RAM_ATTR HandleSendDataDl()
         }
 
         otaPkt.std.type = PACKET_TYPE_DATA;
-        if (firmwareOptions.is_airport)
-        {
-            OtaPackAirportData(&otaPkt, &apInputBuffer);
-        }
-        else if (OtaIsFullRes)
+        // Serial bridge mode - no airport mode
+        if (OtaIsFullRes)
         {
             GenerateOtaDataDl(full, data_dl, nullptr);
         }
@@ -874,45 +861,12 @@ void GotConnection(unsigned long now)
     GotConnectionMillis = now;
     webserverPreventAutoStart = true;
 
-    if (firmwareOptions.is_airport)
-    {
-        apInputBuffer.flush();
-        apOutputBuffer.flush();
-    }
+    // Airport mode removed - no buffer flushing needed
 
     DBGLN("got conn");
 }
 
-static void ICACHE_RAM_ATTR ProcessRfPacket_RC(OTA_Packet_s const * const otaPktPtr)
-{
-    // Must be fully connected to process RC packets, prevents processing RC
-    // during sync, where packets can be received before connection
-    if (connectionState != connected || SwitchModePending)
-        return;
-
-    bool telemetryConfirmValue = OtaUnpackChannelData(otaPktPtr, ChannelData);
-    DataDlSender.ConfirmCurrentPayload(telemetryConfirmValue);
-
-    // No channels packets to the FC or PWM pins if no model match
-    if (connectionHasModelMatch)
-    {
-        if (ExpressLRS_currAirRate_Modparams->numOfSends == 1)
-        {
-            crsfRCFrameAvailable();
-            // teamrace is only checked for servos because the teamrace model select logic only runs
-            // when new frames are available, and will decide later if the frame will be forwarded
-            if (teamraceHasModelMatch)
-                servoNewChannelsAvailable();
-        }
-        else if (!LQCalcDVDA.currentIsSet())
-        {
-            LQCalcDVDA.add();
-        }
-        #if defined(DEBUG_RCVR_LINKSTATS)
-        debugRcvrLinkstatsPending = true;
-        #endif
-    }
-}
+// ProcessRfPacket_RC removed - no longer needed for serial bridge mode
 
 void ICACHE_RAM_ATTR OnELRSBindMSP(uint8_t* newUid4)
 {
@@ -1127,23 +1081,14 @@ bool ICACHE_RAM_ATTR ProcessRFPacket(SX12xxDriverCommon::rx_status const status)
 
     switch (otaPktPtr->std.type)
     {
-    case PACKET_TYPE_RCDATA: //Standard RC Data Packet
-        ProcessRfPacket_RC(otaPktPtr);
-        break;
     case PACKET_TYPE_SYNC: //sync packet from master
         doStartTimer = ProcessRfPacket_SYNC(now,
             OtaIsFullRes ? &otaPktPtr->full.sync.sync : &otaPktPtr->std.sync)
             && !InBindingMode;
         break;
     case PACKET_TYPE_DATA:
-        if (firmwareOptions.is_airport)
-        {
-            OtaUnpackAirportData(otaPktPtr, &apOutputBuffer);
-        }
-        else
-        {
-            ProcessRfPacket_DataUl(otaPktPtr);
-        }
+        // Serial bridge mode - only handle data packets (no airport mode)
+        ProcessRfPacket_DataUl(otaPktPtr);
         break;
     default:
         break;
@@ -1348,11 +1293,8 @@ static void setupSerial()
     Serial.begin(serialBaud, serialConfig, GPIO_PIN_RCSIGNAL_RX, GPIO_PIN_RCSIGNAL_TX, invert);
 #endif
 
-    if (firmwareOptions.is_airport)
-    {
-        serialIO = new SerialAirPort(SERIAL_PROTOCOL_TX, SERIAL_PROTOCOL_RX);
-    }
-    else if (sbusSerialOutput)
+    // Airport mode removed - serial bridge only
+    if (sbusSerialOutput)
     {
         serialIO = new SerialSBUS(SERIAL_PROTOCOL_TX, SERIAL_PROTOCOL_RX);
     }

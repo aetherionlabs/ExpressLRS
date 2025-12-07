@@ -46,9 +46,7 @@ ELRS_EEPROM eeprom;
 TxConfig config;
 Stream *TxUSB;
 
-// Variables / constants for Airport //
-FIFO<AP_MAX_BUF_LEN> apInputBuffer;
-FIFO<AP_MAX_BUF_LEN> apOutputBuffer;
+// Airport mode removed - serial bridge only
 
 #define UART_INPUT_BUF_LEN 1024
 FIFO<UART_INPUT_BUF_LEN> uartInputBuffer;
@@ -563,45 +561,23 @@ void ICACHE_RAM_ATTR SendRCdataToRF()
   }
   else
   {
-    if (firmwareOptions.is_airport)
+    // Serial bridge mode - always send DATA packets (no RC channels, no airport mode)
+    otaPkt.std.type = PACKET_TYPE_DATA;
+    if (OtaIsFullRes)
     {
-      OtaPackAirportData(&otaPkt, &apInputBuffer);
-    }
-    else if ((NextPacketIsDataUl && DataUlSender.IsActive()) || dontSendChannelData)
-    {
-      otaPkt.std.type = PACKET_TYPE_DATA;
-      if (OtaIsFullRes)
-      {
-        otaPkt.full.data_ul.packageIndex = DataUlSender.GetCurrentPayload(
-          otaPkt.full.data_ul.payload,
-          sizeof(otaPkt.full.data_ul.payload));
-        if (config.GetLinkMode() == TX_MAVLINK_MODE)
-          otaPkt.full.data_ul.stubbornAck = DataDlReceiver.GetCurrentConfirm();
-      }
-      else
-      {
-        otaPkt.std.data_ul.packageIndex = DataUlSender.GetCurrentPayload(
-          otaPkt.std.data_ul.payload,
-          sizeof(otaPkt.std.data_ul.payload));
-        if (config.GetLinkMode() == TX_MAVLINK_MODE)
-          otaPkt.std.data_ul.stubbornAck = DataDlReceiver.GetCurrentConfirm();
-      }
-
-      // send channel data next so the channel messages also get sent during data uplink transmissions
-      NextPacketIsDataUl = false;
-      // counter can be increased even for normal DataUl messages since it's reset if a real bind message should be sent
-      BindingSendCount++;
-      // If not in TlmBurst, request a sync packet soon to trigger higher download bandwidth for reply
-      if (syncTelemBoostState == stbIdle)
-        syncSpamCounter = 1;
-      syncTelemBoostState = stbRequested;
+      otaPkt.full.data_ul.packageIndex = DataUlSender.GetCurrentPayload(
+        otaPkt.full.data_ul.payload,
+        sizeof(otaPkt.full.data_ul.payload));
+      if (config.GetLinkMode() == TX_MAVLINK_MODE)
+        otaPkt.full.data_ul.stubbornAck = DataDlReceiver.GetCurrentConfirm();
     }
     else
     {
-      // always enable DataUl after a channel package since the slot is only used if DataUlSender has data to send
-      NextPacketIsDataUl = true;
-
-      OtaPackChannelData(&otaPkt, ChannelData, DataDlReceiver.GetCurrentConfirm());
+      otaPkt.std.data_ul.packageIndex = DataUlSender.GetCurrentPayload(
+        otaPkt.std.data_ul.payload,
+        sizeof(otaPkt.std.data_ul.payload));
+      if (config.GetLinkMode() == TX_MAVLINK_MODE)
+        otaPkt.std.data_ul.stubbornAck = DataDlReceiver.GetCurrentConfirm();
     }
   }
 
